@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import time
 import tkinter as tk
@@ -13,6 +12,7 @@ from ringping.config import load_project_configs, load_settings
 from ringping.controller import AppController
 from ringping.email_notifier import ReviewEmailNotifier
 from ringping.git_ops import GitWorktreeManager
+from ringping.launcher import launch_headless
 from ringping.ringcentral import RingCentralClient
 from ringping.release_monitor import ReleaseMonitor
 from ringping.storage import Storage
@@ -77,36 +77,6 @@ def build_runtime(workspace_dir: Path) -> Runtime:
         startup_notice = f"Webhook server failed to start: {exc}"
 
     return Runtime(controller, worker, poller, release_monitor, webhook_server, startup_notice)
-
-
-def _headless_command(workspace_dir: Path) -> list[str]:
-    if getattr(sys, "frozen", False):
-        return [str(workspace_dir / "RingPingHeadless.exe")]
-
-    python_executable = Path(sys.executable)
-    if python_executable.name.lower() == "python.exe":
-        pythonw_candidate = python_executable.with_name("pythonw.exe")
-        if pythonw_candidate.exists():
-            python_executable = pythonw_candidate
-
-    return [str(python_executable), "-m", "ringping.headless"]
-
-
-def launch_headless(workspace_dir: Path) -> None:
-    command = _headless_command(workspace_dir)
-    creationflags = 0
-    if os.name == "nt":
-        creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-
-    subprocess.Popen(
-        command,
-        cwd=workspace_dir,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        creationflags=creationflags,
-        close_fds=True,
-    )
 
 
 def main() -> None:

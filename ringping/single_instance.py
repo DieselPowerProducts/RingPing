@@ -14,6 +14,7 @@ ERROR_ALREADY_EXISTS = 183
 KERNEL32 = ctypes.windll.kernel32
 MODE_UI = "ui"
 MODE_HEADLESS = "headless"
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
 class SingleInstanceGuard:
@@ -75,6 +76,19 @@ class SingleInstanceGuard:
         mode = state.get("mode")
         return str(mode) if mode else None
 
+    def get_running_state(self) -> dict:
+        return self._read_state()
+
+    def clear_stale_state(self) -> None:
+        state = self._read_state()
+        pid = self._parse_pid(state)
+        if pid is not None and self.is_pid_running(pid):
+            return
+        try:
+            self.state_path.unlink()
+        except FileNotFoundError:
+            pass
+
     def release(self) -> None:
         if not self._handle:
             return
@@ -115,3 +129,24 @@ class SingleInstanceGuard:
             self.state_path.unlink()
         except FileNotFoundError:
             pass
+
+    def _parse_pid(self, state: dict) -> int | None:
+        pid = state.get("pid")
+        if isinstance(pid, int):
+            return pid
+        try:
+            return int(pid)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def is_pid_running(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        handle = KERNEL32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            return True
+        finally:
+            KERNEL32.CloseHandle(handle)

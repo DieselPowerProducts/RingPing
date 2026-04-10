@@ -9,3 +9,4 @@ dist/
 build/
 RingPing.exe
 RingPingHeadless.exe
+RingPingWatchdog.exe
