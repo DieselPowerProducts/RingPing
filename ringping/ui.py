@@ -310,7 +310,4 @@ class DashboardApp(tk.Tk):
         )
 
     def _handle_close(self) -> None:
-        try:
-            self.on_shutdown()
-        finally:
-            self.destroy()
+        self.destroy()

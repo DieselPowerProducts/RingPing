@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import signal
 import threading
 
@@ -29,6 +30,7 @@ def main() -> None:
     finally:
         runtime.shutdown()
         instance_guard.release()
+    os._exit(0)
 
 
 if __name__ == "__main__":

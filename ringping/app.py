@@ -127,9 +127,11 @@ def main() -> None:
         app = DashboardApp(runtime.controller, runtime.shutdown, startup_notice=runtime.startup_notice)
         app.mainloop()
     finally:
+        runtime.shutdown()
         instance_guard.release()
         time.sleep(0.25)
         launch_headless(workspace_dir)
+    os._exit(0)
 
 
 if __name__ == "__main__":
