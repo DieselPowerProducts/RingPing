@@ -4,10 +4,14 @@ import signal
 import threading
 
 from ringping.app import build_runtime, get_workspace_dir
+from ringping.single_instance import SingleInstanceGuard
 
 
 def main() -> None:
     workspace_dir = get_workspace_dir()
+    instance_guard = SingleInstanceGuard(workspace_dir)
+    if not instance_guard.acquire():
+        return
     runtime = build_runtime(workspace_dir)
     stop_event = threading.Event()
 
