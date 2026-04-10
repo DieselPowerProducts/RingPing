@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ringping"
+version = "0.1.0"
+description = "Desktop request router for RingCentral, Codex, and git"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+ringping = "ringping.app:main"
+
+[tool.setuptools.packages.find]
+include = ["ringping*"]

@@ -1,0 +1,59 @@
+[
+  {
+    "slug": "invoice-extractor",
+    "name": "InvoiceExtractor",
+    "repo_path": "C:/Users/Mike/Desktop/InvoiceExtractor/app",
+    "base_branch": "main",
+    "remote_name": "origin",
+    "push_mode": "direct",
+    "auto_push": false,
+    "release_on_push": true,
+    "release_version_strategy": "patch",
+    "release_notes_template": "{title}",
+    "release_manifest_url": "https://raw.githubusercontent.com/DieselMikeK/InvoiceExtractor/main/docs/release.json",
+    "ringcentral_chat_ids": [
+      "157661020166"
+    ],
+    "codex_prompt_prefix": "You are working on the InvoiceExtractor repository. Keep changes tightly scoped to vendor-specific invoice parsing fixes, keep the worktree reviewable, and do not commit or push to git yourself.",
+    "test_command": "",
+    "review_command": "code .",
+    "guardrails": {
+      "block_deletions": true,
+      "max_changed_files": 8,
+      "allowed_paths": [
+        "invoice_parser.py",
+        "vendors.csv",
+        "test_*invoice_parser.py",
+        "test_stock_order_detection.py",
+        "training/**"
+      ],
+      "blocked_paths": [
+        ".github/**",
+        "build/**",
+        "dist/**",
+        "docs/**",
+        "update/**",
+        "build_release.ps1",
+        "publish_release.ps1",
+        "InvoiceExtractor.spec",
+        "InvoiceExtractorUpdater.spec",
+        "invoice_extractor_gui.py",
+        "spreadsheet_writer.py",
+        "core_detection.py",
+        "gmail_client.py",
+        "shopify_client.py",
+        "skunexus_client.py",
+        "update_utils.py",
+        "updater_app.py",
+        "requirements.txt",
+        "VERSION",
+        "release_request.json"
+      ],
+      "prompt_rules": [
+        "Prefer vendor-specific parser overrides and vendor-specific tests over generic parser rewrites.",
+        "Do not change UI, updater, release, email, Shopify, SKU, or build tooling files.",
+        "If the request would require broader application changes, stop and leave no code changes."
+      ]
+    }
+  }
+]
