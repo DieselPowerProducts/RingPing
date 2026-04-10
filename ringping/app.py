@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
@@ -13,7 +14,7 @@ from ringping.git_ops import GitWorktreeManager
 from ringping.ringcentral import RingCentralClient
 from ringping.release_monitor import ReleaseMonitor
 from ringping.storage import Storage
-from ringping.single_instance import SingleInstanceGuard
+from ringping.single_instance import MODE_HEADLESS, MODE_UI, SingleInstanceGuard
 from ringping.ui import DashboardApp
 from ringping.poller import RingCentralPoller
 from ringping.webhook import WebhookServer
@@ -79,15 +80,22 @@ def build_runtime(workspace_dir: Path) -> Runtime:
 def main() -> None:
     workspace_dir = get_workspace_dir()
     instance_guard = SingleInstanceGuard(workspace_dir)
-    if not instance_guard.acquire():
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo("RingPing", "RingPing is already running.")
-        root.destroy()
-        return
+    if not instance_guard.acquire(MODE_UI):
+        running_mode = instance_guard.get_running_mode()
+        if running_mode == MODE_HEADLESS and instance_guard.acquire_after_headless_shutdown():
+            time.sleep(0.5)
+        else:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showinfo("RingPing", "RingPing is already running.")
+            root.destroy()
+            return
     runtime = build_runtime(workspace_dir)
-    app = DashboardApp(runtime.controller, runtime.shutdown, startup_notice=runtime.startup_notice)
-    app.mainloop()
+    try:
+        app = DashboardApp(runtime.controller, runtime.shutdown, startup_notice=runtime.startup_notice)
+        app.mainloop()
+    finally:
+        instance_guard.release()
 
 
 if __name__ == "__main__":
