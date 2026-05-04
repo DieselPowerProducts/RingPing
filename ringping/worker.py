@@ -83,6 +83,15 @@ class RequestWorker(threading.Thread):
             self._append_live_status(live_log_path, "Starting Codex.")
 
             codex_result = self.codex_runner.run(project, request, worktree_path, downloaded_attachments, live_log_path)
+            if self._is_blocked_agent_result(codex_result):
+                self._append_live_status(
+                    live_log_path,
+                    "Codex tool runner reported shell startup failure. Recovering local helpers and retrying once.",
+                )
+                self._recover_windows_process_startup(live_log_path)
+                time.sleep(2)
+                codex_result = self.codex_runner.run(project, request, worktree_path, downloaded_attachments, live_log_path)
+
             summary_parts = []
             if live_log_path:
                 summary_parts.append(f"Live log:\n{live_log_path}")
@@ -596,6 +605,7 @@ class RequestWorker(threading.Thread):
             return
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         process_names = (
+            "codex.exe",
             "Dell.TechHub.Diagnostics.SubAgent.exe",
             "Dell.TechHub.Instrumentation.SubAgent.exe",
             "DPM.exe",
@@ -634,6 +644,11 @@ class RequestWorker(threading.Thread):
         )
 
     def _build_blocked_agent_noop_message(self, codex_result) -> str | None:
+        if not self._is_blocked_agent_result(codex_result):
+            return None
+        return "Codex reported it was blocked by a local tool/session failure and left no code changes."
+
+    def _is_blocked_agent_result(self, codex_result) -> bool:
         combined = "\n".join(
             part for part in (codex_result.last_message, codex_result.stdout_tail, codex_result.stderr_tail) if part
         )
@@ -641,14 +656,18 @@ class RequestWorker(threading.Thread):
         blocked_markers = (
             "blocked before i could inspect",
             "blocked before i could",
+            "blocked by the runner",
+            "left the working tree unchanged",
             "no files were modified",
             "shell_command",
+            "shell process fails",
+            "shell execution is failing",
             "powershell startup",
             "0xc0000142",
+            "-1073741502",
             "command_execution",
+            "cmd /c echo hello",
         )
         if "blocked" not in lowered:
-            return None
-        if not any(marker in lowered for marker in blocked_markers):
-            return None
-        return "Codex reported it was blocked by a local tool/session failure and left no code changes."
+            return False
+        return any(marker in lowered for marker in blocked_markers)

@@ -353,8 +353,12 @@ class WorkerLiveLogTests(unittest.TestCase):
             git_manager.worktree_has_changes.return_value = False
             codex_runner.run.return_value = codex_result
 
-            worker._process_request(request)
+            with patch.object(worker, "_recover_windows_process_startup") as recover, \
+                 patch("ringping.worker.time.sleep"):
+                worker._process_request(request)
 
+            recover.assert_called_once()
+            self.assertEqual(codex_runner.run.call_count, 2)
             storage.mark_request_error.assert_called_once()
             args = storage.mark_request_error.call_args.args
             self.assertEqual(args[0], 36)
@@ -364,6 +368,87 @@ class WorkerLiveLogTests(unittest.TestCase):
                 "thread-1",
                 "Scuba Steve was blocked by a local tool/session problem while working on 'Fix stock order'. Review is needed before retrying.",
             )
+
+    def test_process_request_retries_once_after_blocked_codex_tool_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_dir = Path(temp_dir)
+            worktree_dir = workspace_dir / "worktree"
+            worktree_dir.mkdir(parents=True, exist_ok=True)
+            settings = build_settings(workspace_dir)
+            settings.request_logs_dir.mkdir(parents=True, exist_ok=True)
+
+            storage = Mock()
+            git_manager = Mock()
+            codex_runner = Mock()
+            ringcentral_client = Mock()
+            ringcentral_client.is_configured = True
+            review_email_notifier = Mock()
+            worker = RequestWorker(settings, storage, git_manager, codex_runner, ringcentral_client, review_email_notifier)
+
+            request = RequestRecord(
+                id=39,
+                project_slug="invoice-extractor",
+                source="ringcentral",
+                source_thread_id="thread-1",
+                source_message_id="message-1",
+                title="Fix invoice",
+                prompt="Fix invoice",
+                attachments=[],
+                status=RequestStatus.RUNNING,
+                branch_name=None,
+                worktree_path=None,
+                codex_summary=None,
+                diff_summary=None,
+                manual_review_reason=None,
+                error_text=None,
+                commit_sha=None,
+                release_version=None,
+                created_at="2026-05-04T18:10:00+00:00",
+                updated_at="2026-05-04T18:10:00+00:00",
+                started_at=None,
+                completed_at=None,
+                pushed_at=None,
+                release_ready_notified_at=None,
+                is_ask=False,
+            )
+            project = ProjectConfig(
+                slug="invoice-extractor",
+                name="InvoiceExtractor",
+                repo_path=str(worktree_dir),
+            )
+            blocked_result = CodexRunResult(
+                exit_code=0,
+                last_message=(
+                    "I'm blocked by the runner: every shell process fails immediately "
+                    "with Windows status -1073741502, including cmd /c echo hello.\n\n"
+                    "I left the working tree unchanged."
+                ),
+                stdout_tail="",
+                stderr_tail="",
+                command_display="codex exec --full-auto",
+            )
+            success_result = CodexRunResult(
+                exit_code=0,
+                last_message="No code changes needed.",
+                stdout_tail="",
+                stderr_tail="",
+                command_display="codex exec --full-auto",
+            )
+
+            storage.get_project.return_value = project
+            git_manager.create_or_reuse_worktree.return_value = ("ringping/invoice-extractor/39", worktree_dir)
+            git_manager.collect_diff_summary.return_value = ""
+            git_manager.worktree_has_changes.return_value = False
+            codex_runner.run.side_effect = [blocked_result, success_result]
+
+            with patch.object(worker, "_recover_windows_process_startup") as recover, \
+                 patch("ringping.worker.time.sleep"):
+                worker._process_request(request)
+
+            recover.assert_called_once()
+            self.assertEqual(codex_runner.run.call_count, 2)
+            storage.mark_request_no_changes.assert_called_once()
+            storage.mark_request_error.assert_not_called()
 
     def test_process_request_recovers_failed_shell_preflight_before_codex(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
