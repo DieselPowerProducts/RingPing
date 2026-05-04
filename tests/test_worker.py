@@ -137,6 +137,27 @@ class WorkerLiveLogTests(unittest.TestCase):
             self.assertIn("If the question is effectively yes/no, start the answer with a clear Yes or No.", prompt)
             self.assertIn("Do not delete downloaded ask attachments; RingPing removes those temporary files", prompt)
 
+    def test_worker_waits_without_claiming_when_codex_credits_are_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_dir = Path(temp_dir)
+            settings = build_settings(workspace_dir)
+            settings.codex_fallback_command = ""
+            storage = Mock()
+            worker = RequestWorker(settings, storage, Mock(), Mock(), Mock(), Mock())
+
+            def stop_after_wait(seconds: float) -> None:
+                self.assertEqual(seconds, 60)
+                worker._stop_event.set()
+
+            with patch("ringping.worker.codex_credits_available", return_value=False), patch.object(
+                worker._stop_event,
+                "wait",
+                side_effect=stop_after_wait,
+            ):
+                worker.run()
+
+            storage.claim_next_pending_request.assert_not_called()
+
     def test_process_request_salvages_timed_out_diff_and_marks_pushed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_dir = Path(temp_dir)

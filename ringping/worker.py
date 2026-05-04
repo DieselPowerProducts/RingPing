@@ -54,6 +54,10 @@ class RequestWorker(threading.Thread):
 
     def run(self) -> None:
         while not self._stop_event.is_set():
+            if not self.settings.codex_fallback_command and not codex_credits_available():
+                self._using_fallback = True
+                self._stop_event.wait(60)
+                continue
             if self._using_fallback and codex_credits_available():
                 self._using_fallback = False
             request = self.storage.claim_next_pending_request()
