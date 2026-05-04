@@ -103,6 +103,8 @@ class Storage:
                 connection.execute("ALTER TABLE requests ADD COLUMN release_ready_notified_at TEXT")
             if "manual_review_reason" not in request_columns:
                 connection.execute("ALTER TABLE requests ADD COLUMN manual_review_reason TEXT")
+            if "is_ask" not in request_columns:
+                connection.execute("ALTER TABLE requests ADD COLUMN is_ask INTEGER NOT NULL DEFAULT 0")
 
     def sync_projects(self, projects: list[ProjectConfig]) -> None:
         now = utc_now_iso()
@@ -214,8 +216,8 @@ class Storage:
                 """
                 INSERT INTO requests (
                     project_slug, source, source_thread_id, source_message_id, title, prompt,
-                    attachments_json, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    attachments_json, status, is_ask, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     incoming.project_slug,
@@ -226,6 +228,7 @@ class Storage:
                     incoming.prompt.strip(),
                     json.dumps([attachment.to_dict() for attachment in incoming.attachments]),
                     RequestStatus.PENDING.value,
+                    1 if incoming.is_ask else 0,
                     now,
                     now,
                 ),
@@ -258,6 +261,22 @@ class Storage:
         if row is None:
             raise KeyError(f"Unknown request id: {request_id}")
         return self._row_to_request(row)
+
+    def list_source_message_ids(self, source: str, source_thread_id: str) -> set[str]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT source_message_id
+                FROM requests
+                WHERE source = ? AND source_thread_id = ? AND source_message_id IS NOT NULL
+                """,
+                (source, source_thread_id),
+            ).fetchall()
+        return {
+            str(row["source_message_id"]).strip()
+            for row in rows
+            if str(row["source_message_id"] or "").strip()
+        }
 
     def claim_next_pending_request(self) -> RequestRecord | None:
         now = utc_now_iso()
@@ -465,4 +484,5 @@ class Storage:
             completed_at=row["completed_at"],
             pushed_at=row["pushed_at"],
             release_ready_notified_at=row["release_ready_notified_at"],
+            is_ask=bool(row["is_ask"]) if "is_ask" in row.keys() else False,
         )

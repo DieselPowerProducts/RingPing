@@ -15,6 +15,7 @@ KERNEL32 = ctypes.windll.kernel32
 MODE_UI = "ui"
 MODE_HEADLESS = "headless"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+UI_SWITCH_REQUEST_TIMEOUT_SECONDS = 30.0
 
 
 class SingleInstanceGuard:
@@ -69,7 +70,16 @@ class SingleInstanceGuard:
             pass
 
     def headless_shutdown_requested(self) -> bool:
-        return self.switch_to_ui_path.exists()
+        if not self.switch_to_ui_path.exists():
+            return False
+        requested_at = self._read_switch_request_time()
+        if requested_at is None:
+            self.clear_ui_switch_request()
+            return False
+        if time.time() - requested_at > UI_SWITCH_REQUEST_TIMEOUT_SECONDS:
+            self.clear_ui_switch_request()
+            return False
+        return True
 
     def get_running_mode(self) -> str | None:
         state = self._read_state()
@@ -137,6 +147,18 @@ class SingleInstanceGuard:
         try:
             return int(pid)
         except (TypeError, ValueError):
+            return None
+
+    def _read_switch_request_time(self) -> float | None:
+        try:
+            raw = self.switch_to_ui_path.read_text(encoding="ascii").strip()
+        except OSError:
+            return None
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
             return None
 
     @staticmethod

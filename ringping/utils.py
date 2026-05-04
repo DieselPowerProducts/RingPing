@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -9,6 +11,26 @@ from pathlib import Path
 TIME_ONLY_PATTERN = re.compile(r"\b([0-9]{1,2}:[0-9]{2}\s?(?:[APap][Mm])?)\b")
 ISO_PATTERN = re.compile(r"\b(20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\b")
 UNIX_TS_PATTERN = re.compile(r'"resets_at"\s*:\s*(\d{10,})')
+UOI_NAME = 2
+DESKTOP_SWITCHDESKTOP = 0x0100
+
+
+def format_scuba_steve_status(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return "Scuba Steve was not able to get a response, please try again."
+    if re.search(r"\bscuba\s+steve\b", cleaned, flags=re.IGNORECASE):
+        return cleaned
+    return f"Scuba Steve says: {cleaned}"
+
+
+def scuba_steve_quick_reply(prompt: str) -> str | None:
+    normalized = " ".join(prompt.lower().split())
+    if "scuba steve" not in normalized:
+        return None
+    if not any(token in normalized for token in ("ready", "willing", "available", "help")):
+        return None
+    return "Scuba Steve is ready and willing to help the team."
 
 
 def utc_now_iso() -> str:
@@ -28,6 +50,14 @@ def tail_text(value: str, limit: int = 4000) -> str:
     return value[-limit:]
 
 
+def codex_credits_available(*, home_dir: Path | None = None) -> bool:
+    """Return True if Codex credits have reset (reset time is in the past)."""
+    reset_time = _latest_codex_session_reset_time(home_dir or Path.home())
+    if reset_time is None:
+        return True
+    return datetime.now(timezone.utc) >= reset_time
+
+
 def detect_codex_reset_time(text: str, *, fallback_home: Path | None = None) -> datetime | None:
     reset_time = _detect_reset_time_from_text(text)
     if reset_time is not None:
@@ -38,6 +68,29 @@ def detect_codex_reset_time(text: str, *, fallback_home: Path | None = None) -> 
 def format_local_time(value: datetime) -> str:
     local_value = value.astimezone()
     return local_value.strftime("%I:%M %p").lstrip("0")
+
+
+def interactive_request_console_available() -> bool:
+    if os.name != "nt":
+        return True
+    try:
+        user32 = ctypes.windll.user32
+    except AttributeError:
+        return False
+    desktop = user32.OpenInputDesktop(0, False, DESKTOP_SWITCHDESKTOP)
+    if not desktop:
+        return False
+    try:
+        needed = ctypes.c_uint(0)
+        user32.GetUserObjectInformationW(desktop, UOI_NAME, None, 0, ctypes.byref(needed))
+        if needed.value <= 2:
+            return False
+        buffer = ctypes.create_unicode_buffer(needed.value)
+        if not user32.GetUserObjectInformationW(desktop, UOI_NAME, buffer, needed.value, ctypes.byref(needed)):
+            return False
+        return buffer.value.strip().lower() == "default"
+    finally:
+        user32.CloseDesktop(desktop)
 
 
 def _detect_reset_time_from_text(text: str) -> datetime | None:

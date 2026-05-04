@@ -79,7 +79,26 @@ def build_runtime(workspace_dir: Path) -> Runtime:
     return Runtime(controller, worker, poller, release_monitor, webhook_server, startup_notice)
 
 
+def cmd_find_chat(query: str) -> None:
+    workspace_dir = get_workspace_dir()
+    settings = load_settings(workspace_dir)
+    client = RingCentralClient(settings)
+    if not client.is_configured:
+        print("RingCentral credentials are not configured.")
+        sys.exit(1)
+    matches = client.find_chat_id(query)
+    if not matches:
+        print(f"No chats found matching '{query}'")
+    else:
+        for chat in matches:
+            print(f"  id={chat['id']}  type={chat['type']}  name={chat['name']}")
+
+
 def main() -> None:
+    if len(sys.argv) >= 3 and sys.argv[1] == "find-chat":
+        cmd_find_chat(" ".join(sys.argv[2:]))
+        return
+
     workspace_dir = get_workspace_dir()
     instance_guard = SingleInstanceGuard(workspace_dir)
     if not instance_guard.acquire(MODE_UI):

@@ -7,6 +7,7 @@ from ringping.git_ops import GitError, GitWorktreeManager
 from ringping.models import IncomingRequest, ProjectSnapshot, RequestRecord, RequestStatus
 from ringping.ringcentral import RingCentralClient
 from ringping.storage import Storage
+from ringping.utils import scuba_steve_quick_reply
 
 
 class AppController:
@@ -36,12 +37,18 @@ class AppController:
             payload,
             projects,
             command_prefix=self.settings.ringcentral_command_prefix,
+            ask_prefix=self.settings.ringcentral_ask_prefix,
         )
         if incoming is None:
             return None
         request, created = self.storage.create_request_result(incoming)
         if created:
-            self._post_status_update(request, "Got it, Gimme a quick sec")
+            quick_reply = scuba_steve_quick_reply(incoming.prompt) if incoming.is_ask else None
+            if quick_reply:
+                self.storage.mark_request_no_changes(request.id, "Handled by RingPing quick response.", "")
+                self._post_status_update(request, quick_reply)
+            else:
+                self._post_status_update(request, "Scuba Steve is looking at the issue right now.")
         return request
 
     def set_project_auto_push(self, project_slug: str, enabled: bool) -> None:
@@ -72,11 +79,12 @@ class AppController:
         self.storage.mark_request_pushed(request.id, commit_sha, summary, diff_summary, release_version=release_version)
 
         if self.settings.post_status_updates and self.ringcentral_client.is_configured and request.source_thread_id:
-            if release_version:
-                text = "Ok that update is building now, I'll let you know when it's ready."
-            else:
-                text = f"RingPing pushed '{request.title}' for {project.name}. Commit: {commit_sha[:7]} Branch: {request.branch_name}"
-            self.ringcentral_client.post_chat_message(request.source_thread_id, text)
+            if not release_version:
+                text = (
+                    f"Scuba Steve is done and pushed '{request.title}' for {project.name}. "
+                    f"Commit: {commit_sha[:7]} Branch: {request.branch_name}"
+                )
+                self.ringcentral_client.post_chat_message(request.source_thread_id, text)
         if release_version:
             return f"Pushed {commit_sha[:7]} and requested release v{release_version}."
         return commit_sha

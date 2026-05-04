@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,7 @@ class GuardrailError(GitError):
 
 
 DEFAULT_EPHEMERAL_EXCLUDES = (
+    "ringping_attachments/",
     ".ringping_artifacts/",
     "__pycache__/",
     "*.pyc",
@@ -70,7 +72,10 @@ class GitWorktreeManager:
             self.ensure_standard_excludes(worktree_path)
             return branch_name, worktree_path
         if worktree_path.exists() and any(worktree_path.iterdir()):
-            raise GitError(f"Worktree path already exists and is not empty: {worktree_path}")
+            # Stale folder from a previous failed attempt — clean it up and start fresh
+            import shutil as _shutil
+            _shutil.rmtree(worktree_path, ignore_errors=True)
+            worktree_path.mkdir(parents=True, exist_ok=True)
 
         if self._branch_exists(repo_path, branch_name):
             self._run_git(repo_path, "worktree", "add", "--force", str(worktree_path), branch_name)
@@ -87,10 +92,11 @@ class GitWorktreeManager:
         return branch_name, worktree_path
 
     def worktree_has_changes(self, worktree_path: Path) -> bool:
-        return bool(self.status_porcelain(worktree_path).strip())
+        # Only count tracked changes (modifications, deletions, staged files) — not untracked files
+        return bool(self._run_git(worktree_path, "status", "--short", "--untracked-files=no").stdout.strip())
 
     def status_porcelain(self, worktree_path: Path) -> str:
-        return self._run_git(worktree_path, "status", "--short").stdout.strip()
+        return self._run_git(worktree_path, "status", "--short", "--untracked-files=no").stdout.strip()
 
     def collect_diff_summary(self, worktree_path: Path) -> str:
         status = self.status_porcelain(worktree_path)
@@ -380,10 +386,12 @@ class GitWorktreeManager:
         return self._matches_any(normalized, list(DEFAULT_EPHEMERAL_EXCLUDES))
 
     def _run_git(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         result = subprocess.run(
             ["git", "-C", str(cwd), *args],
             capture_output=True,
             text=True,
+            creationflags=creationflags,
         )
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip() or "Unknown git error"

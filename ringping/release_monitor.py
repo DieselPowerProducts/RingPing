@@ -51,12 +51,22 @@ class ReleaseMonitor(threading.Thread):
             if self._compare_versions(manifest_version, request.release_version) < 0:
                 continue
 
+            self._append_request_log_status(request.id, "Release ready. Update is available.")
             if self.settings.post_status_updates and self.ringcentral_client.is_configured and request.source_thread_id:
                 self.ringcentral_client.post_chat_message(
                     request.source_thread_id,
-                    "Ok that update is ready for ya!",
+                    "Scuba Steve is done. It is ready for you to update!",
                 )
             self.storage.mark_release_ready_notified(request.id)
+
+    def _append_request_log_status(self, request_id: int, text: str) -> None:
+        log_path = self.settings.request_logs_dir / f"request-{request_id}.log"
+        raw_log_path = self.settings.request_logs_dir / f"request-{request_id}.raw.log"
+        for path in (log_path, raw_log_path):
+            if not path.exists():
+                continue
+            with path.open("a", encoding="utf-8", errors="replace") as handle:
+                handle.write(f"[RingPing] {text}\n")
 
     def _fetch_manifest(self, project) -> dict:
         local_manifest = self._fetch_manifest_from_repo(project)
@@ -75,18 +85,21 @@ class ReleaseMonitor(threading.Thread):
         if not (repo_path.exists() and (repo_path / ".git").exists()):
             return None
         manifest_path = self._manifest_repo_path(project.release_manifest_url)
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if __import__("os").name == "nt" else 0
         try:
             subprocess.run(
                 ["git", "-C", str(repo_path), "fetch", project.remote_name, project.base_branch],
                 capture_output=True,
                 text=True,
                 check=True,
+                creationflags=creationflags,
             )
             result = subprocess.run(
                 ["git", "-C", str(repo_path), "show", f"{project.remote_name}/{project.base_branch}:{manifest_path}"],
                 capture_output=True,
                 text=True,
                 check=True,
+                creationflags=creationflags,
             )
             return json.loads(result.stdout)
         except Exception:

@@ -133,6 +133,7 @@ class RequestRecord:
     completed_at: str | None
     pushed_at: str | None
     release_ready_notified_at: str | None
+    is_ask: bool = False
 
     @property
     def can_push(self) -> bool:
@@ -152,6 +153,7 @@ class IncomingRequest:
     source: str = "manual"
     source_thread_id: str | None = None
     source_message_id: str | None = None
+    is_ask: bool = False
 
 
 @dataclass(slots=True)
@@ -161,6 +163,8 @@ class CodexRunResult:
     stdout_tail: str
     stderr_tail: str
     command_display: str
+    timed_out: bool = False
+    timeout_reason: str | None = None
 
 
 @dataclass(slots=True)

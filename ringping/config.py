@@ -15,6 +15,7 @@ class AppSettings:
     workspace_dir: Path
     db_path: Path
     worktrees_dir: Path
+    request_logs_dir: Path
     projects_file: Path
     webhook_host: str
     webhook_port: int
@@ -24,7 +25,12 @@ class AppSettings:
     release_poll_seconds: int
     codex_command: str
     codex_flags: list[str]
+    codex_ask_flags: list[str]
+    codex_fallback_command: str
+    codex_fallback_flags: list[str]
     codex_timeout_seconds: int
+    codex_ask_timeout_seconds: int
+    codex_idle_after_changes_seconds: int
     ringcentral_server_url: str
     ringcentral_client_id: str
     ringcentral_client_secret: str
@@ -32,6 +38,8 @@ class AppSettings:
     ringcentral_verification_token: str
     ringcentral_validation_token: str
     ringcentral_command_prefix: str
+    ringcentral_ask_prefix: str
+    request_console_enabled: bool
     post_status_updates: bool
     review_email_enabled: bool
     review_email_mode: str
@@ -86,13 +94,24 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
     if not worktrees_dir.is_absolute():
         worktrees_dir = workspace / worktrees_dir
 
+    request_logs_dir = Path(os.environ.get("RINGPING_REQUEST_LOGS_DIR", "data/request-logs"))
+    if not request_logs_dir.is_absolute():
+        request_logs_dir = workspace / request_logs_dir
+
     codex_flags_raw = os.environ.get("RINGPING_CODEX_FLAGS", "--full-auto").strip()
     codex_flags = shlex.split(codex_flags_raw, posix=False) if codex_flags_raw else []
+
+    codex_ask_flags_raw = os.environ.get("RINGPING_CODEX_ASK_FLAGS", "--full-auto --sandbox read-only --ephemeral").strip()
+    codex_ask_flags = shlex.split(codex_ask_flags_raw, posix=False) if codex_ask_flags_raw else []
+
+    codex_fallback_flags_raw = os.environ.get("RINGPING_CODEX_FALLBACK_FLAGS", "--dangerously-skip-permissions").strip()
+    codex_fallback_flags = shlex.split(codex_fallback_flags_raw, posix=False) if codex_fallback_flags_raw else []
 
     settings = AppSettings(
         workspace_dir=workspace,
         db_path=db_path,
         worktrees_dir=worktrees_dir,
+        request_logs_dir=request_logs_dir,
         projects_file=projects_file,
         webhook_host=os.environ.get("RINGPING_WEBHOOK_HOST", "127.0.0.1").strip(),
         webhook_port=int(os.environ.get("RINGPING_WEBHOOK_PORT", "8765")),
@@ -102,7 +121,12 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
         release_poll_seconds=int(os.environ.get("RINGPING_RELEASE_POLL_SECONDS", "20")),
         codex_command=os.environ.get("RINGPING_CODEX_COMMAND", "codex").strip(),
         codex_flags=codex_flags,
+        codex_ask_flags=codex_ask_flags,
+        codex_fallback_command=os.environ.get("RINGPING_CODEX_FALLBACK_COMMAND", "claude").strip(),
+        codex_fallback_flags=codex_fallback_flags,
         codex_timeout_seconds=int(os.environ.get("RINGPING_CODEX_TIMEOUT_SECONDS", "3600")),
+        codex_ask_timeout_seconds=int(os.environ.get("RINGPING_CODEX_ASK_TIMEOUT_SECONDS", "180")),
+        codex_idle_after_changes_seconds=int(os.environ.get("RINGPING_CODEX_IDLE_AFTER_CHANGES_SECONDS", "180")),
         ringcentral_server_url=os.environ.get("RINGPING_RINGCENTRAL_SERVER_URL", "https://platform.ringcentral.com").strip(),
         ringcentral_client_id=os.environ.get("RINGPING_RINGCENTRAL_CLIENT_ID", "").strip(),
         ringcentral_client_secret=os.environ.get("RINGPING_RINGCENTRAL_CLIENT_SECRET", "").strip(),
@@ -110,6 +134,8 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
         ringcentral_verification_token=os.environ.get("RINGPING_RINGCENTRAL_VERIFICATION_TOKEN", "").strip(),
         ringcentral_validation_token=os.environ.get("RINGPING_RINGCENTRAL_VALIDATION_TOKEN", "").strip(),
         ringcentral_command_prefix=os.environ.get("RINGPING_RINGCENTRAL_COMMAND_PREFIX", "").strip(),
+        ringcentral_ask_prefix=os.environ.get("RINGPING_RINGCENTRAL_ASK_PREFIX", "ask:").strip(),
+        request_console_enabled=truthy(os.environ.get("RINGPING_REQUEST_CONSOLE_ENABLED"), False),
         post_status_updates=truthy(os.environ.get("RINGPING_POST_STATUS_UPDATES"), False),
         review_email_enabled=truthy(os.environ.get("RINGPING_REVIEW_EMAIL_ENABLED"), False),
         review_email_mode=os.environ.get("RINGPING_REVIEW_EMAIL_MODE", "outlook").strip().lower(),
@@ -125,6 +151,7 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
 
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.worktrees_dir.mkdir(parents=True, exist_ok=True)
+    settings.request_logs_dir.mkdir(parents=True, exist_ok=True)
     settings.projects_file.parent.mkdir(parents=True, exist_ok=True)
     return settings
 
