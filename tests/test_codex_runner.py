@@ -24,7 +24,9 @@ def build_settings() -> AppSettings:
         ringcentral_poll_seconds=20,
         release_poll_seconds=20,
         codex_command="codex",
+        codex_root_flags=[],
         codex_flags=["--full-auto"],
+        codex_ask_root_flags=[],
         codex_ask_flags=["--full-auto", "--sandbox", "read-only", "--ephemeral"],
         codex_fallback_command="claude",
         codex_fallback_flags=["--dangerously-skip-permissions"],
@@ -78,14 +80,36 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertEqual(result.last_message, "Attachments look good.")
         self.assertEqual(run_command.call_count, 2)
         self.assertEqual(run_command.call_args_list[0].args[0], "codex")
-        self.assertEqual(
-            run_command.call_args_list[0].args[1],
-            ["--full-auto", "--sandbox", "read-only", "--ephemeral"],
-        )
+        self.assertEqual(run_command.call_args_list[0].args[1], [])
+        self.assertEqual(run_command.call_args_list[0].args[2], ["--full-auto", "--sandbox", "read-only", "--ephemeral"])
         self.assertEqual(run_command.call_args_list[0].kwargs["timeout_seconds"], 180)
         self.assertEqual(run_command.call_args_list[1].args[0], "claude")
-        self.assertEqual(run_command.call_args_list[1].args[1], ["--dangerously-skip-permissions"])
+        self.assertEqual(run_command.call_args_list[1].args[1], [])
+        self.assertEqual(run_command.call_args_list[1].args[2], ["--dangerously-skip-permissions"])
         self.assertEqual(run_command.call_args_list[1].kwargs["timeout_seconds"], 180)
+
+    def test_codex_root_flags_are_placed_before_exec_subcommand(self) -> None:
+        settings = build_settings()
+        settings.codex_root_flags = ["--dangerously-bypass-approvals-and-sandbox"]
+        runner = CodexRunner(settings)
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            runner,
+            "_run_process",
+            return_value=("", "", 0, False, None),
+        ):
+            result = runner._run_codex(
+                "codex",
+                settings.codex_root_flags,
+                settings.codex_flags,
+                "prompt",
+                Path(temp_dir),
+                0,
+                None,
+                30,
+            )
+
+        self.assertIn("codex --dangerously-bypass-approvals-and-sandbox exec --full-auto", result.command_display)
 
     def test_resolve_command_uses_path_when_configured_absolute_path_is_stale(self) -> None:
         runner = CodexRunner(build_settings())

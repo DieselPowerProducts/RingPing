@@ -30,6 +30,7 @@ class CodexRunner:
         prompt = self._build_prompt(project, request, downloaded_attachments or [])
         return self._run_with_fallback(
             self.settings.codex_command,
+            self.settings.codex_root_flags,
             self.settings.codex_flags,
             prompt,
             worktree_path,
@@ -40,6 +41,7 @@ class CodexRunner:
     def run_read_only(self, prompt: str, cwd: Path, live_log_path: Path | None = None) -> CodexRunResult:
         return self._run_with_fallback(
             self.settings.codex_command,
+            self.settings.codex_ask_root_flags,
             self.settings.codex_ask_flags,
             prompt,
             cwd,
@@ -53,6 +55,7 @@ class CodexRunner:
     def _run_command(
         self,
         command: str,
+        root_flags: list[str],
         flags: list[str],
         prompt: str,
         worktree_path: Path,
@@ -79,6 +82,7 @@ class CodexRunner:
             )
         return self._run_codex(
             resolved_command,
+            root_flags,
             flags,
             prompt,
             worktree_path,
@@ -168,6 +172,7 @@ class CodexRunner:
     def _run_with_fallback(
         self,
         command: str,
+        root_flags: list[str],
         flags: list[str],
         prompt: str,
         worktree_path: Path,
@@ -177,6 +182,7 @@ class CodexRunner:
     ) -> CodexRunResult:
         result = self._run_command(
             command,
+            root_flags,
             flags,
             prompt,
             worktree_path,
@@ -189,6 +195,7 @@ class CodexRunner:
             self._append_log_line(live_log_path, f"[RingPing] Primary command hit a rate limit. Falling back to {fallback_command}.")
             return self._run_command(
                 fallback_command,
+                [],
                 self.settings.codex_fallback_flags,
                 prompt,
                 worktree_path,
@@ -200,6 +207,7 @@ class CodexRunner:
     def _run_codex(
         self,
         command: str,
+        root_flags: list[str],
         flags: list[str],
         prompt: str,
         worktree_path: Path,
@@ -211,6 +219,7 @@ class CodexRunner:
             last_message_path = Path(temp_dir) / "last-message.txt"
             cmd = [
                 command,
+                *root_flags,
                 "exec",
                 *flags,
                 "--json",

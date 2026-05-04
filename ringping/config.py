@@ -24,7 +24,9 @@ class AppSettings:
     ringcentral_poll_seconds: int
     release_poll_seconds: int
     codex_command: str
+    codex_root_flags: list[str]
     codex_flags: list[str]
+    codex_ask_root_flags: list[str]
     codex_ask_flags: list[str]
     codex_fallback_command: str
     codex_fallback_flags: list[str]
@@ -101,8 +103,14 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
     codex_flags_raw = os.environ.get("RINGPING_CODEX_FLAGS", "--full-auto").strip()
     codex_flags = shlex.split(codex_flags_raw, posix=False) if codex_flags_raw else []
 
+    codex_root_flags_raw = os.environ.get("RINGPING_CODEX_ROOT_FLAGS", "").strip()
+    codex_root_flags = shlex.split(codex_root_flags_raw, posix=False) if codex_root_flags_raw else []
+
     codex_ask_flags_raw = os.environ.get("RINGPING_CODEX_ASK_FLAGS", "--full-auto --sandbox read-only --ephemeral").strip()
     codex_ask_flags = shlex.split(codex_ask_flags_raw, posix=False) if codex_ask_flags_raw else []
+
+    codex_ask_root_flags_raw = os.environ.get("RINGPING_CODEX_ASK_ROOT_FLAGS", "").strip()
+    codex_ask_root_flags = shlex.split(codex_ask_root_flags_raw, posix=False) if codex_ask_root_flags_raw else []
 
     codex_fallback_flags_raw = os.environ.get("RINGPING_CODEX_FALLBACK_FLAGS", "--dangerously-skip-permissions").strip()
     codex_fallback_flags = shlex.split(codex_fallback_flags_raw, posix=False) if codex_fallback_flags_raw else []
@@ -120,7 +128,9 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
         ringcentral_poll_seconds=int(os.environ.get("RINGPING_RINGCENTRAL_POLL_SECONDS", "20")),
         release_poll_seconds=int(os.environ.get("RINGPING_RELEASE_POLL_SECONDS", "20")),
         codex_command=os.environ.get("RINGPING_CODEX_COMMAND", "codex").strip(),
+        codex_root_flags=codex_root_flags,
         codex_flags=codex_flags,
+        codex_ask_root_flags=codex_ask_root_flags,
         codex_ask_flags=codex_ask_flags,
         codex_fallback_command=os.environ.get("RINGPING_CODEX_FALLBACK_COMMAND", "claude").strip(),
         codex_fallback_flags=codex_fallback_flags,
