@@ -341,6 +341,34 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertIn("stderr activity", stderr_text)
         self.assertGreaterEqual(len(activities), 2)
 
+    def test_run_process_stops_when_codex_notification_queue_fills(self) -> None:
+        runner = CodexRunner(build_settings())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout_text, stderr_text, exit_code, timed_out, timeout_reason = runner._run_process(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import sys, time\n"
+                        "for _ in range(30):\n"
+                        "    print('WARN codex_app_server::in_process: dropping in-process server notification (queue full)', file=sys.stderr, flush=True)\n"
+                        "time.sleep(30)\n"
+                    ),
+                ],
+                "",
+                Path(temp_dir),
+                0,
+                None,
+                60,
+                json_stdout=True,
+            )
+
+        self.assertEqual(stdout_text, "")
+        self.assertIn("dropping in-process server notification", stderr_text)
+        self.assertTrue(timed_out)
+        self.assertEqual(timeout_reason, "codex_queue_full")
+        self.assertNotEqual(exit_code, 0)
+
     def test_resolve_command_uses_path_when_configured_absolute_path_is_stale(self) -> None:
         runner = CodexRunner(build_settings())
         stale_command = "C:/Users/Mike/.vscode/extensions/openai.chatgpt-old/bin/windows-x86_64/codex.exe"
@@ -444,6 +472,11 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertFalse(
             runner._stderr_line_counts_as_activity(
                 "WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt"
+            )
+        )
+        self.assertFalse(
+            runner._stderr_line_counts_as_activity(
+                "WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'"
             )
         )
         self.assertTrue(runner._stderr_line_counts_as_activity("Traceback: real command failure"))

@@ -740,6 +740,7 @@ class CodexRunner:
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
         last_activity = [time.monotonic()]
+        codex_queue_full_warnings = [0]
 
         def consume_stdout() -> None:
             if process.stdout is None:
@@ -761,6 +762,8 @@ class CodexRunner:
                 return
             for line in iter(process.stderr.readline, ""):
                 stderr_parts.append(line)
+                if self._is_codex_queue_full_warning(line):
+                    codex_queue_full_warnings[0] += 1
                 if self._stderr_line_counts_as_activity(line):
                     last_activity[0] = time.monotonic()
                     if activity_callback is not None:
@@ -796,6 +799,11 @@ class CodexRunner:
                 timeout_reason = "overall_timeout"
                 self._terminate_process(process, live_log_path)
                 break
+            if codex_queue_full_warnings[0] >= 25:
+                timed_out = True
+                timeout_reason = "codex_queue_full"
+                self._terminate_process(process, live_log_path)
+                break
             if (
                 self.settings.codex_idle_after_changes_seconds > 0
                 and (now - last_activity[0]) >= self.settings.codex_idle_after_changes_seconds
@@ -817,6 +825,12 @@ class CodexRunner:
                     "Stopping Codex and salvaging the existing diff."
                 )
                 monitor_message = "Local command went idle after producing changes; Scuba Steve is salvaging the existing diff."
+            elif timeout_reason == "codex_queue_full":
+                timeout_message = (
+                    f"{LOG_PREFIX} Codex stopped responding after its in-process notification queue filled. "
+                    "Stopping the local command so this training job can fail cleanly instead of hanging."
+                )
+                monitor_message = "Codex stopped responding because its local notification queue filled; Scuba Steve stopped the command."
             else:
                 timeout_message = f"{LOG_PREFIX} Command timed out after {timeout_seconds} seconds."
                 monitor_message = f"Local command timed out after {timeout_seconds} seconds."
@@ -845,8 +859,12 @@ class CodexRunner:
         ignored_fragments = (
             "dropping in-process server notification",
             "ignoring interface.defaultprompt",
+            "codex_core_skills::loader: ignoring interface.icon",
         )
         return not any(fragment in lowered for fragment in ignored_fragments)
+
+    def _is_codex_queue_full_warning(self, line: str) -> bool:
+        return "dropping in-process server notification" in line.lower()
 
     def _tracked_changes_exist(self, worktree_path: Path) -> bool:
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
