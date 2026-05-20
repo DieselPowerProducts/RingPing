@@ -165,6 +165,47 @@ class RingCentralClient:
             is_ask=is_ask,
         )
 
+    def extract_online_redirect_target(
+        self,
+        payload: dict,
+        projects: list[ProjectConfig],
+        command_prefix: str = "",
+        ask_prefix: str = "ask:",
+    ) -> tuple[str, str] | None:
+        body = payload.get("body") if isinstance(payload.get("body"), dict) else payload
+        if not isinstance(body, dict):
+            return None
+
+        event_type = body.get("eventType") or payload.get("eventType")
+        post_type = body.get("type")
+        text = str(body.get("text") or "").strip()
+        group_id = str(body.get("groupId") or body.get("chatId") or "").strip()
+        if event_type and event_type not in {"PostAdded", "PostChanged"}:
+            return None
+        if post_type and post_type != "TextMessage":
+            return None
+        if not group_id or not text:
+            return None
+
+        project_by_chat = {
+            chat_id: project
+            for project in projects
+            for chat_id in project.ringcentral_chat_ids
+        }
+        project = project_by_chat.get(group_id)
+        if project is None:
+            return None
+
+        prefixes = []
+        for prefix in (command_prefix, "fix:", ask_prefix):
+            normalized = str(prefix or "").strip()
+            if normalized and normalized.lower() not in {item.lower() for item in prefixes}:
+                prefixes.append(normalized)
+
+        if not any(text.lower().startswith(prefix.lower()) for prefix in prefixes):
+            return None
+        return group_id, project.name
+
     def _api_request(self, method: str, path: str, payload: dict | None = None) -> dict:
         if not self.is_configured:
             raise RingCentralError("RingCentral credentials are not configured.")

@@ -7,7 +7,7 @@ from ringping.git_ops import GitError, GitWorktreeManager
 from ringping.models import IncomingRequest, ProjectSnapshot, RequestRecord, RequestStatus
 from ringping.ringcentral import RingCentralClient
 from ringping.storage import Storage
-from ringping.utils import scuba_steve_quick_reply
+from ringping.utils import DISPLAY_NAME, scuba_steve_quick_reply
 
 
 class AppController:
@@ -33,6 +33,24 @@ class AppController:
 
     def ingest_ringcentral_payload(self, payload: dict) -> RequestRecord | None:
         projects = self.storage.list_projects()
+        if not self.settings.ringcentral_legacy_requests_enabled:
+            redirect_target = self.ringcentral_client.extract_online_redirect_target(
+                payload,
+                projects,
+                command_prefix=self.settings.ringcentral_command_prefix,
+                ask_prefix=self.settings.ringcentral_ask_prefix,
+            )
+            if redirect_target is not None:
+                chat_id, project_name = redirect_target
+                self.ringcentral_client.post_chat_message(
+                    chat_id,
+                    (
+                        f"{project_name} parser training and fix requests are now made online on the "
+                        f"training tab here: {self.settings.ringcentral_online_training_url}"
+                    ),
+                )
+            return None
+
         incoming = self.ringcentral_client.extract_incoming_request(
             payload,
             projects,
@@ -45,7 +63,7 @@ class AppController:
         if created:
             quick_reply = scuba_steve_quick_reply(incoming.prompt) if incoming.is_ask else None
             if quick_reply:
-                self.storage.mark_request_no_changes(request.id, "Handled by RingPing quick response.", "")
+                self.storage.mark_request_no_changes(request.id, f"Handled by {DISPLAY_NAME} quick response.", "")
                 self._post_status_update(request, quick_reply)
             else:
                 self._post_status_update(request, "Scuba Steve is looking at the issue right now.")

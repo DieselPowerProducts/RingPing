@@ -32,7 +32,8 @@ def build_settings(workspace_dir: Path) -> AppSettings:
         codex_ask_flags=["--full-auto", "--sandbox", "read-only", "--ephemeral"],
         codex_fallback_command="claude",
         codex_fallback_flags=["--dangerously-skip-permissions"],
-        codex_timeout_seconds=3600,
+        codex_fallback_home="",
+        codex_timeout_seconds=0,
         codex_ask_timeout_seconds=180,
         codex_idle_after_changes_seconds=180,
         ringcentral_server_url="https://platform.ringcentral.com",
@@ -43,6 +44,8 @@ def build_settings(workspace_dir: Path) -> AppSettings:
         ringcentral_validation_token="",
         ringcentral_command_prefix="fix:",
         ringcentral_ask_prefix="ask:",
+        ringcentral_legacy_requests_enabled=True,
+        ringcentral_online_training_url="https://invoice-extractor-online.vercel.app/",
         request_console_enabled=False,
         post_status_updates=False,
         review_email_enabled=False,
@@ -76,11 +79,11 @@ class WorkerLiveLogTests(unittest.TestCase):
 
             self.assertEqual(log_path, settings.request_logs_dir / "request-42.log")
             log_text = log_path.read_text(encoding="utf-8")
-            self.assertIn("[RingPing] Request 42", log_text)
-            self.assertIn("[RingPing] Project: InvoiceExtractor", log_text)
-            self.assertIn("[RingPing] Title: Sample request", log_text)
-            self.assertIn("[RingPing] Mode: fix", log_text)
-            self.assertIn("[RingPing] Raw log:", log_text)
+            self.assertIn("[Scuba Steve] Request 42", log_text)
+            self.assertIn("[Scuba Steve] Project: InvoiceExtractor", log_text)
+            self.assertIn("[Scuba Steve] Title: Sample request", log_text)
+            self.assertIn("[Scuba Steve] Mode: fix", log_text)
+            self.assertIn("[Scuba Steve] Raw log:", log_text)
             self.assertIn("fix the parser", log_text)
 
     def test_prepare_live_log_opens_console_only_when_interactive(self) -> None:
@@ -135,7 +138,7 @@ class WorkerLiveLogTests(unittest.TestCase):
             self.assertIn("Write for a non-technical business user such as accounting or operations.", prompt)
             self.assertIn("Do not mention function names, file names, test names, commands, or internal implementation details", prompt)
             self.assertIn("If the question is effectively yes/no, start the answer with a clear Yes or No.", prompt)
-            self.assertIn("Do not delete downloaded ask attachments; RingPing removes those temporary files", prompt)
+            self.assertIn("Do not delete downloaded ask attachments; Scuba Steve removes those temporary files", prompt)
 
     def test_worker_waits_without_claiming_when_codex_credits_are_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -377,10 +380,12 @@ class WorkerLiveLogTests(unittest.TestCase):
             codex_runner.run.return_value = codex_result
 
             with patch.object(worker, "_recover_windows_process_startup") as recover, \
+                 patch.object(worker, "_powershell_smoke_test", return_value=(True, "")) as smoke_test, \
                  patch("ringping.worker.time.sleep"):
                 worker._process_request(request)
 
             recover.assert_called_once()
+            self.assertEqual(smoke_test.call_count, 2)
             self.assertEqual(codex_runner.run.call_count, 2)
             storage.mark_request_error.assert_called_once()
             args = storage.mark_request_error.call_args.args
@@ -465,10 +470,12 @@ class WorkerLiveLogTests(unittest.TestCase):
             codex_runner.run.side_effect = [blocked_result, success_result]
 
             with patch.object(worker, "_recover_windows_process_startup") as recover, \
+                 patch.object(worker, "_powershell_smoke_test", return_value=(True, "")) as smoke_test, \
                  patch("ringping.worker.time.sleep"):
                 worker._process_request(request)
 
             recover.assert_called_once()
+            self.assertEqual(smoke_test.call_count, 2)
             self.assertEqual(codex_runner.run.call_count, 2)
             storage.mark_request_no_changes.assert_called_once()
             storage.mark_request_error.assert_not_called()
@@ -872,7 +879,7 @@ class WorkerLiveLogTests(unittest.TestCase):
             codex_runner.run_read_only.assert_not_called()
             storage.mark_request_no_changes.assert_called_once_with(
                 32,
-                "Handled by RingPing quick response.",
+                "Handled by Scuba Steve quick response.",
                 "",
             )
             ringcentral_client.post_chat_message.assert_called_once_with(

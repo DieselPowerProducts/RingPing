@@ -57,5 +57,57 @@
         "If the request would require broader application changes, stop and leave no code changes."
       ]
     }
+  },
+  {
+    "slug": "invoice-extractor-online",
+    "name": "InvoiceExtractorOnline",
+    "repo_path": "C:/Users/Mike/Desktop/InvoiceExtractorOnline",
+    "base_branch": "main",
+    "remote_name": "origin",
+    "push_mode": "direct",
+    "auto_push": false,
+    "release_on_push": false,
+    "release_version_strategy": "none",
+    "release_notes_template": "{title}",
+    "release_manifest_url": "",
+    "ringcentral_chat_ids": [
+      "157661020166",
+      "1563175665666"
+    ],
+    "codex_prompt_prefix": "You are working on the InvoiceExtractorOnline repository at https://github.com/DieselPowerProducts/InvoiceExtractorOnline. This is the online parser, not the desktop InvoiceExtractor app. Before editing Next.js code, read the relevant guide in node_modules/next/dist/docs/. Parser training changes belong in api/python_parser/** and related online parser/export code only. Keep changes tightly scoped to the uploaded vendor PDFs, generate a fresh training_output.xlsx from the updated online parser, and do not commit or push to git yourself. On this Windows RingPing runner, run shell commands sequentially instead of starting multiple PowerShell commands in parallel.",
+    "test_command": "npm run build",
+    "review_command": "code .",
+    "guardrails": {
+      "block_deletions": true,
+      "max_changed_files": 10,
+      "allowed_paths": [
+        "api/python_parser/**",
+        "api/parse-invoice-python.py",
+        "src/server/parser/**",
+        "src/server/export/**",
+        "src/server/training/**",
+        "src/app/api/training/**",
+        "scripts/**",
+        "tests/**",
+        "training_output.xlsx"
+      ],
+      "blocked_paths": [
+        ".github/**",
+        ".vercel/**",
+        "node_modules/**",
+        "public/**",
+        "src/app/page.tsx",
+        "package.json",
+        "package-lock.json",
+        "next.config.*",
+        "vercel.json"
+      ],
+      "prompt_rules": [
+        "Do not edit C:/Users/Mike/Desktop/InvoiceExtractor/app or any desktop InvoiceExtractor files.",
+        "Use the online parser code in this repository as the source of truth.",
+        "Always leave a fresh training_output.xlsx generated from the updated online parser.",
+        "If the request would require broad UI, deployment, dependency, or unrelated parser changes, stop and leave no code changes."
+      ]
+    }
   }
 ]

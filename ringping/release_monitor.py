@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from ringping.config import AppSettings
 from ringping.ringcentral import RingCentralClient
 from ringping.storage import Storage
+from ringping.utils import LOG_PREFIX
 
 
 class ReleaseMonitor(threading.Thread):
@@ -66,7 +67,7 @@ class ReleaseMonitor(threading.Thread):
             if not path.exists():
                 continue
             with path.open("a", encoding="utf-8", errors="replace") as handle:
-                handle.write(f"[RingPing] {text}\n")
+                handle.write(f"{LOG_PREFIX} {text}\n")
 
     def _fetch_manifest(self, project) -> dict:
         local_manifest = self._fetch_manifest_from_repo(project)

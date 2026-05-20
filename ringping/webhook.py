@@ -14,11 +14,13 @@ class WebhookServer:
         port: int,
         on_payload: Callable[[dict], object | None],
         verification_token: str = "",
+        on_training_wake: Callable[[], object | None] | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.on_payload = on_payload
         self.verification_token = verification_token
+        self.on_training_wake = on_training_wake
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -42,6 +44,19 @@ class WebhookServer:
             def log_message(self, format: str, *args: object) -> None:
                 return
 
+            def _send_cors_headers(self) -> None:
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "content-type")
+
+            def do_OPTIONS(self) -> None:
+                if urlparse(self.path).path == "/ringping/training/wake":
+                    self.send_response(204)
+                    self._send_cors_headers()
+                    self.end_headers()
+                    return
+                self.send_error(404)
+
             def do_GET(self) -> None:
                 if urlparse(self.path).path == "/health":
                     self.send_response(200)
@@ -52,7 +67,18 @@ class WebhookServer:
                 self.send_error(404)
 
             def do_POST(self) -> None:
-                if urlparse(self.path).path != "/ringcentral/webhook":
+                path = urlparse(self.path).path
+                if path == "/ringping/training/wake":
+                    if parent.on_training_wake is not None:
+                        parent.on_training_wake()
+                    self.send_response(202)
+                    self._send_cors_headers()
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"accepted":true}')
+                    return
+
+                if path != "/ringcentral/webhook":
                     self.send_error(404)
                     return
 

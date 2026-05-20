@@ -13,6 +13,8 @@ class ControllerStatusMessageTests(unittest.TestCase):
         settings = SimpleNamespace(
             ringcentral_command_prefix="fix:",
             ringcentral_ask_prefix="ask:",
+            ringcentral_legacy_requests_enabled=True,
+            ringcentral_online_training_url="https://invoice-extractor-online.vercel.app/",
             post_status_updates=True,
         )
         incoming = IncomingRequest(
@@ -69,6 +71,8 @@ class ControllerStatusMessageTests(unittest.TestCase):
         settings = SimpleNamespace(
             ringcentral_command_prefix="fix:",
             ringcentral_ask_prefix="ask:",
+            ringcentral_legacy_requests_enabled=True,
+            ringcentral_online_training_url="https://invoice-extractor-online.vercel.app/",
             post_status_updates=True,
         )
         incoming = IncomingRequest(
@@ -119,12 +123,38 @@ class ControllerStatusMessageTests(unittest.TestCase):
 
         storage.mark_request_no_changes.assert_called_once_with(
             2,
-            "Handled by RingPing quick response.",
+            "Handled by Scuba Steve quick response.",
             "",
         )
         ringcentral_client.post_chat_message.assert_called_once_with(
             "thread-1",
             "Scuba Steve is ready and willing to help the team.",
+        )
+
+    def test_ringcentral_fix_command_redirects_to_online_training_when_legacy_requests_disabled(self) -> None:
+        settings = SimpleNamespace(
+            ringcentral_command_prefix="fix:",
+            ringcentral_ask_prefix="ask:",
+            ringcentral_legacy_requests_enabled=False,
+            ringcentral_online_training_url="https://invoice-extractor-online.vercel.app/",
+            post_status_updates=True,
+        )
+        storage = Mock()
+        storage.list_projects.return_value = []
+        ringcentral_client = Mock()
+        ringcentral_client.extract_online_redirect_target.return_value = ("thread-1", "InvoiceExtractor")
+        controller = AppController(settings, storage, None, ringcentral_client)
+
+        controller.ingest_ringcentral_payload({"body": {"id": "message-1", "text": "fix: add vendor"}})
+
+        storage.create_request_result.assert_not_called()
+        ringcentral_client.extract_incoming_request.assert_not_called()
+        ringcentral_client.post_chat_message.assert_called_once_with(
+            "thread-1",
+            (
+                "InvoiceExtractor parser training and fix requests are now made online on the "
+                "training tab here: https://invoice-extractor-online.vercel.app/"
+            ),
         )
 
 

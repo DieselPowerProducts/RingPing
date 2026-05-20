@@ -6,6 +6,7 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from ringping.controller import AppController
 from ringping.models import ProjectSnapshot, RequestRecord, RequestStatus
+from ringping.utils import DISPLAY_NAME
 
 
 STATUS_COLORS = {
@@ -23,12 +24,12 @@ class DashboardApp(tk.Tk):
         super().__init__()
         self.controller = controller
         self.on_shutdown = on_shutdown
-        self.title("RingPing")
+        self.title(DISPLAY_NAME)
         self.geometry("1360x900")
         self.minsize(1100, 720)
         self.configure(bg="#f5f5f4")
 
-        self.status_var = tk.StringVar(value=startup_notice or "RingPing ready.")
+        self.status_var = tk.StringVar(value=startup_notice or f"{DISPLAY_NAME} ready.")
         self.webhook_var = tk.StringVar(value=self.controller.webhook_banner())
         self.project_slug_by_label: dict[str, str] = {}
         self.project_release_on_push_by_slug: dict[str, bool] = {}
@@ -47,7 +48,7 @@ class DashboardApp(tk.Tk):
 
         title = tk.Label(
             header,
-            text="RingPing",
+            text=DISPLAY_NAME,
             font=("Segoe UI", 20, "bold"),
             fg="white",
             bg="#111827",

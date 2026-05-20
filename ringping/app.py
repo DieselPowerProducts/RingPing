@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import time
 import tkinter as tk
@@ -12,10 +13,12 @@ from ringping.config import load_project_configs, load_settings
 from ringping.controller import AppController
 from ringping.email_notifier import ReviewEmailNotifier
 from ringping.git_ops import GitWorktreeManager
+from ringping.invoice_training import InvoiceTrainingWorker
 from ringping.launcher import launch_headless
 from ringping.ringcentral import RingCentralClient
 from ringping.release_monitor import ReleaseMonitor
 from ringping.storage import Storage
+from ringping.utils import DISPLAY_NAME
 from ringping.single_instance import MODE_HEADLESS, MODE_UI, SingleInstanceGuard
 from ringping.ui import DashboardApp
 from ringping.poller import RingCentralPoller
@@ -24,12 +27,22 @@ from ringping.worker import RequestWorker
 
 
 class Runtime:
-    def __init__(self, controller: AppController, worker: RequestWorker, poller: RingCentralPoller, release_monitor: ReleaseMonitor, webhook_server: WebhookServer, startup_notice: str) -> None:
+    def __init__(
+        self,
+        controller: AppController,
+        worker: RequestWorker,
+        poller: RingCentralPoller,
+        release_monitor: ReleaseMonitor,
+        webhook_server: WebhookServer,
+        training_worker: InvoiceTrainingWorker,
+        startup_notice: str,
+    ) -> None:
         self.controller = controller
         self.worker = worker
         self.poller = poller
         self.release_monitor = release_monitor
         self.webhook_server = webhook_server
+        self.training_worker = training_worker
         self.startup_notice = startup_notice
 
     def shutdown(self) -> None:
@@ -37,12 +50,21 @@ class Runtime:
         self.poller.stop()
         self.release_monitor.stop()
         self.webhook_server.stop()
+        self.training_worker.stop()
 
 
 def get_workspace_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
+
+
+def _is_tcp_port_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
+        return False
 
 
 def build_runtime(workspace_dir: Path) -> Runtime:
@@ -63,20 +85,49 @@ def build_runtime(workspace_dir: Path) -> Runtime:
     poller.start()
     release_monitor = ReleaseMonitor(settings, storage, ringcentral_client)
     release_monitor.start()
+    training_worker = InvoiceTrainingWorker(settings, storage, git_manager, codex_runner, ringcentral_client)
+    training_worker.start()
 
     startup_notice = ""
+    webhook_port = settings.webhook_port
+    if _is_tcp_port_open(settings.webhook_host, webhook_port):
+        webhook_port = settings.webhook_port + 1
+        startup_notice = (
+            f"Webhook port {settings.webhook_port} is already in use. "
+            f"Local training wake endpoint is listening on port {webhook_port}."
+        )
     webhook_server = WebhookServer(
         settings.webhook_host,
-        settings.webhook_port,
+        webhook_port,
         controller.ingest_ringcentral_payload,
         verification_token=settings.ringcentral_verification_token,
+        on_training_wake=training_worker.wake,
     )
     try:
         webhook_server.start()
     except OSError as exc:
-        startup_notice = f"Webhook server failed to start: {exc}"
+        fallback_port = webhook_port + 1
+        fallback_server = WebhookServer(
+            settings.webhook_host,
+            fallback_port,
+            controller.ingest_ringcentral_payload,
+            verification_token=settings.ringcentral_verification_token,
+            on_training_wake=training_worker.wake,
+        )
+        try:
+            fallback_server.start()
+            webhook_server = fallback_server
+            startup_notice = (
+                f"Webhook server failed to start on port {webhook_port}: {exc}. "
+                f"Local training wake endpoint is listening on port {fallback_port}."
+            )
+        except OSError as fallback_exc:
+            startup_notice = (
+                f"Webhook server failed to start on port {webhook_port}: {exc}; "
+                f"fallback port {fallback_port} also failed: {fallback_exc}"
+            )
 
-    return Runtime(controller, worker, poller, release_monitor, webhook_server, startup_notice)
+    return Runtime(controller, worker, poller, release_monitor, webhook_server, training_worker, startup_notice)
 
 
 def cmd_find_chat(query: str) -> None:
@@ -108,7 +159,7 @@ def main() -> None:
         else:
             root = tk.Tk()
             root.withdraw()
-            messagebox.showinfo("RingPing", "RingPing is already running.")
+            messagebox.showinfo(DISPLAY_NAME, f"{DISPLAY_NAME} is already running.")
             root.destroy()
             return
     runtime = build_runtime(workspace_dir)

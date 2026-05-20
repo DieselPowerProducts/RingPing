@@ -25,6 +25,7 @@ DEFAULT_EPHEMERAL_EXCLUDES = (
     "__pycache__/",
     "*.pyc",
     "*.pyo",
+    "training_output*.xlsx",
     ".pytest_cache/",
     ".mypy_cache/",
     ".ruff_cache/",

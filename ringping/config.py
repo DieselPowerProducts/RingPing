@@ -30,6 +30,7 @@ class AppSettings:
     codex_ask_flags: list[str]
     codex_fallback_command: str
     codex_fallback_flags: list[str]
+    codex_fallback_home: str
     codex_timeout_seconds: int
     codex_ask_timeout_seconds: int
     codex_idle_after_changes_seconds: int
@@ -41,6 +42,8 @@ class AppSettings:
     ringcentral_validation_token: str
     ringcentral_command_prefix: str
     ringcentral_ask_prefix: str
+    ringcentral_legacy_requests_enabled: bool
+    ringcentral_online_training_url: str
     request_console_enabled: bool
     post_status_updates: bool
     review_email_enabled: bool
@@ -53,6 +56,14 @@ class AppSettings:
     review_email_smtp_password: str
     review_email_smtp_from: str
     review_email_smtp_use_tls: bool
+    training_worker_enabled: bool = False
+    training_worker_base_url: str = ""
+    training_worker_token: str = ""
+    training_worker_id: str = ""
+    training_worker_project_slug: str = "invoice-extractor-online"
+    training_worker_active_command_poll_seconds: int = 2
+    training_worker_plain_event_timeout_seconds: int = 180
+    training_worker_ringcentral_chat_id: str = ""
 
     @property
     def webhook_path(self) -> str:
@@ -134,7 +145,8 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
         codex_ask_flags=codex_ask_flags,
         codex_fallback_command=os.environ.get("RINGPING_CODEX_FALLBACK_COMMAND", "claude").strip(),
         codex_fallback_flags=codex_fallback_flags,
-        codex_timeout_seconds=int(os.environ.get("RINGPING_CODEX_TIMEOUT_SECONDS", "3600")),
+        codex_fallback_home=os.environ.get("RINGPING_CODEX_FALLBACK_HOME", "").strip(),
+        codex_timeout_seconds=int(os.environ.get("RINGPING_CODEX_TIMEOUT_SECONDS", "0")),
         codex_ask_timeout_seconds=int(os.environ.get("RINGPING_CODEX_ASK_TIMEOUT_SECONDS", "180")),
         codex_idle_after_changes_seconds=int(os.environ.get("RINGPING_CODEX_IDLE_AFTER_CHANGES_SECONDS", "180")),
         ringcentral_server_url=os.environ.get("RINGPING_RINGCENTRAL_SERVER_URL", "https://platform.ringcentral.com").strip(),
@@ -145,6 +157,11 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
         ringcentral_validation_token=os.environ.get("RINGPING_RINGCENTRAL_VALIDATION_TOKEN", "").strip(),
         ringcentral_command_prefix=os.environ.get("RINGPING_RINGCENTRAL_COMMAND_PREFIX", "").strip(),
         ringcentral_ask_prefix=os.environ.get("RINGPING_RINGCENTRAL_ASK_PREFIX", "ask:").strip(),
+        ringcentral_legacy_requests_enabled=truthy(os.environ.get("RINGPING_RINGCENTRAL_LEGACY_REQUESTS_ENABLED"), False),
+        ringcentral_online_training_url=os.environ.get(
+            "RINGPING_RINGCENTRAL_ONLINE_TRAINING_URL",
+            "https://invoice-extractor-online.vercel.app/",
+        ).strip(),
         request_console_enabled=truthy(os.environ.get("RINGPING_REQUEST_CONSOLE_ENABLED"), False),
         post_status_updates=truthy(os.environ.get("RINGPING_POST_STATUS_UPDATES"), False),
         review_email_enabled=truthy(os.environ.get("RINGPING_REVIEW_EMAIL_ENABLED"), False),
@@ -157,6 +174,14 @@ def load_settings(workspace_dir: Path | None = None) -> AppSettings:
         review_email_smtp_password=os.environ.get("RINGPING_REVIEW_EMAIL_SMTP_PASSWORD", "").strip(),
         review_email_smtp_from=os.environ.get("RINGPING_REVIEW_EMAIL_SMTP_FROM", "").strip(),
         review_email_smtp_use_tls=truthy(os.environ.get("RINGPING_REVIEW_EMAIL_SMTP_USE_TLS"), True),
+        training_worker_enabled=truthy(os.environ.get("RINGPING_TRAINING_WORKER_ENABLED"), False),
+        training_worker_base_url=os.environ.get("RINGPING_TRAINING_WORKER_BASE_URL", "").strip(),
+        training_worker_token=os.environ.get("RINGPING_TRAINING_WORKER_TOKEN", "").strip(),
+        training_worker_id=os.environ.get("RINGPING_TRAINING_WORKER_ID", "").strip() or os.environ.get("COMPUTERNAME", "").strip() or "ringping-local",
+        training_worker_project_slug=os.environ.get("RINGPING_TRAINING_WORKER_PROJECT_SLUG", "invoice-extractor-online").strip(),
+        training_worker_active_command_poll_seconds=int(os.environ.get("RINGPING_TRAINING_WORKER_ACTIVE_COMMAND_POLL_SECONDS", "2")),
+        training_worker_plain_event_timeout_seconds=int(os.environ.get("RINGPING_TRAINING_WORKER_PLAIN_EVENT_TIMEOUT_SECONDS", "180")),
+        training_worker_ringcentral_chat_id=os.environ.get("RINGPING_TRAINING_WORKER_RINGCENTRAL_CHAT_ID", "").strip(),
     )
 
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)

@@ -16,6 +16,8 @@ from ringping.models import ProjectConfig, RequestRecord
 from ringping.ringcentral import RingCentralClient, RingCentralError
 from ringping.storage import Storage
 from ringping.utils import (
+    DISPLAY_NAME,
+    LOG_PREFIX,
     codex_credits_available,
     detect_codex_reset_time,
     format_local_time,
@@ -94,6 +96,7 @@ class RequestWorker(threading.Thread):
                 )
                 self._recover_windows_process_startup(live_log_path)
                 time.sleep(2)
+                self._ensure_codex_shell_ready(live_log_path)
                 codex_result = self.codex_runner.run(project, request, worktree_path, downloaded_attachments, live_log_path)
 
             summary_parts = []
@@ -111,10 +114,10 @@ class RequestWorker(threading.Thread):
             if codex_result.timed_out:
                 if codex_result.timeout_reason == "idle_after_changes":
                     summary_parts.append(
-                        "RingPing note:\nCodex became idle after producing a local diff, so RingPing continued from the existing changes."
+                        f"{DISPLAY_NAME} note:\nCodex became idle after producing a local diff, so {DISPLAY_NAME} continued from the existing changes."
                     )
                 else:
-                    summary_parts.append("RingPing note:\nCodex timed out before finishing the run.")
+                    summary_parts.append(f"{DISPLAY_NAME} note:\nCodex timed out before finishing the run.")
             summary_parts.append("Command:\n" + codex_result.command_display)
 
             self._append_live_status(live_log_path, "Codex finished. Checking workspace changes.")
@@ -260,7 +263,7 @@ class RequestWorker(threading.Thread):
         try:
             quick_reply = scuba_steve_quick_reply(request.prompt)
             if quick_reply:
-                self.storage.mark_request_no_changes(request.id, "Handled by RingPing quick response.", "")
+                self.storage.mark_request_no_changes(request.id, f"Handled by {DISPLAY_NAME} quick response.", "")
                 self._maybe_post_status(request, quick_reply)
                 return
 
@@ -287,7 +290,7 @@ class RequestWorker(threading.Thread):
             if codex_result.stderr_tail:
                 summary_parts.append("Stderr tail:\n" + codex_result.stderr_tail.strip())
             if codex_result.timed_out:
-                summary_parts.append("RingPing note:\nCodex timed out before finishing the ask request.")
+                summary_parts.append(f"{DISPLAY_NAME} note:\nCodex timed out before finishing the ask request.")
             summary_parts.append("Command:\n" + codex_result.command_display)
             summary = "\n\n".join(part for part in summary_parts if part).strip()
 
@@ -480,7 +483,7 @@ class RequestWorker(threading.Thread):
                 "Do not do broad repo sweeps or scan `ringping_attachments`, `.ringping_artifacts`, `training`, or `required` unless attachments were provided or the question explicitly requires those directories.",
                 "Do not modify repository files.",
                 "Do not commit or push anything.",
-                "Do not delete downloaded ask attachments; RingPing removes those temporary files after the answer.",
+                f"Do not delete downloaded ask attachments; {DISPLAY_NAME} removes those temporary files after the answer.",
                 "If there are attachments, report whether they landed correctly only if that is relevant to the question.",
             ]
         )
@@ -490,14 +493,14 @@ class RequestWorker(threading.Thread):
         log_path = self.settings.request_logs_dir / f"request-{request.id}.log"
         raw_log_path = self._raw_log_path(log_path)
         log_lines = [
-            f"[RingPing] Request {request.id}",
-            f"[RingPing] Project: {project.name}",
-            f"[RingPing] Title: {request.title}",
-            f"[RingPing] Mode: {'ask' if request.is_ask else 'fix'}",
-            f"[RingPing] Working directory: {cwd}",
-            f"[RingPing] Raw log: {raw_log_path}",
+            f"{LOG_PREFIX} Request {request.id}",
+            f"{LOG_PREFIX} Project: {project.name}",
+            f"{LOG_PREFIX} Title: {request.title}",
+            f"{LOG_PREFIX} Mode: {'ask' if request.is_ask else 'fix'}",
+            f"{LOG_PREFIX} Working directory: {cwd}",
+            f"{LOG_PREFIX} Raw log: {raw_log_path}",
             "",
-            "[RingPing] Prompt:",
+            f"{LOG_PREFIX} Prompt:",
             request.prompt.strip(),
             "",
         ]
@@ -528,7 +531,7 @@ class RequestWorker(threading.Thread):
         if log_path is None:
             return
         with log_path.open("a", encoding="utf-8", errors="replace") as handle:
-            handle.write(f"[RingPing] {text}\n")
+            handle.write(f"{LOG_PREFIX} {text}\n")
 
     def _raw_log_path(self, log_path: Path) -> Path:
         return log_path.with_name(f"{log_path.stem}.raw{log_path.suffix}")
@@ -562,7 +565,7 @@ class RequestWorker(threading.Thread):
 
         raise RuntimeError(
             "Local PowerShell startup check failed before launching Codex. "
-            "RingPing stopped known Dell helper processes but Windows still could not start PowerShell."
+            f"{DISPLAY_NAME} stopped known Dell helper processes but Windows still could not start PowerShell."
         )
 
     def _powershell_smoke_test(self) -> tuple[bool, str]:

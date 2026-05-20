@@ -29,7 +29,8 @@ def build_settings(workspace_dir: Path) -> AppSettings:
         codex_ask_flags=["--full-auto", "--sandbox", "read-only", "--ephemeral"],
         codex_fallback_command="claude",
         codex_fallback_flags=["--dangerously-skip-permissions"],
-        codex_timeout_seconds=3600,
+        codex_fallback_home="",
+        codex_timeout_seconds=0,
         codex_ask_timeout_seconds=180,
         codex_idle_after_changes_seconds=180,
         ringcentral_server_url="https://platform.ringcentral.com",
@@ -40,6 +41,8 @@ def build_settings(workspace_dir: Path) -> AppSettings:
         ringcentral_validation_token="",
         ringcentral_command_prefix="fix:",
         ringcentral_ask_prefix="ask:",
+        ringcentral_legacy_requests_enabled=True,
+        ringcentral_online_training_url="https://invoice-extractor-online.vercel.app/",
         request_console_enabled=False,
         post_status_updates=False,
         review_email_enabled=False,
@@ -63,8 +66,8 @@ class ReleaseMonitorTests(unittest.TestCase):
             settings.request_logs_dir.mkdir(parents=True, exist_ok=True)
             live_log = settings.request_logs_dir / "request-18.log"
             raw_log = settings.request_logs_dir / "request-18.raw.log"
-            live_log.write_text("[RingPing] Existing live line\n", encoding="utf-8")
-            raw_log.write_text("[RingPing] Existing raw line\n", encoding="utf-8")
+            live_log.write_text("[Scuba Steve] Existing live line\n", encoding="utf-8")
+            raw_log.write_text("[Scuba Steve] Existing raw line\n", encoding="utf-8")
             monitor = ReleaseMonitor(settings, None, None)
 
             monitor._append_request_log_status(18, "Release ready. Update is available.")

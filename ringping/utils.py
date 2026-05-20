@@ -13,15 +13,17 @@ ISO_PATTERN = re.compile(r"\b(20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:
 UNIX_TS_PATTERN = re.compile(r'"resets_at"\s*:\s*(\d{10,})')
 UOI_NAME = 2
 DESKTOP_SWITCHDESKTOP = 0x0100
+DISPLAY_NAME = "Scuba Steve"
+LOG_PREFIX = f"[{DISPLAY_NAME}]"
 
 
 def format_scuba_steve_status(text: str) -> str:
     cleaned = text.strip()
     if not cleaned:
-        return "Scuba Steve was not able to get a response, please try again."
+        return f"{DISPLAY_NAME} was not able to get a response, please try again."
     if re.search(r"\bscuba\s+steve\b", cleaned, flags=re.IGNORECASE):
         return cleaned
-    return f"Scuba Steve says: {cleaned}"
+    return f"{DISPLAY_NAME} says: {cleaned}"
 
 
 def scuba_steve_quick_reply(prompt: str) -> str | None:
@@ -30,7 +32,7 @@ def scuba_steve_quick_reply(prompt: str) -> str | None:
         return None
     if not any(token in normalized for token in ("ready", "willing", "available", "help")):
         return None
-    return "Scuba Steve is ready and willing to help the team."
+    return f"{DISPLAY_NAME} is ready and willing to help the team."
 
 
 def utc_now_iso() -> str:
