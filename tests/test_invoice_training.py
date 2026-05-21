@@ -170,12 +170,34 @@ class InvoiceTrainingWorkerTests(unittest.TestCase):
             settings = build_settings(Path(temp_dir))
             worker = InvoiceTrainingWorker(settings, Mock(), Mock(), Mock(), Mock())
             cancel_event = threading.Event()
+            worktree = Path(temp_dir) / "worktree"
+            worktree.mkdir()
+            command_state = {"interrupted_by_message": False}
             worker.api_client = Mock()
             worker.api_client.list_commands.return_value = [{"id": "cmd-1", "type": "stop"}]
 
-            worker._watch_commands("job-1", cancel_event)
+            worker._watch_commands("job-1", cancel_event, worktree, command_state)
 
         self.assertTrue(cancel_event.is_set())
+        worker.api_client.acknowledge_command.assert_called_once()
+
+    def test_watch_commands_interrupts_for_message_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = build_settings(Path(temp_dir))
+            worker = InvoiceTrainingWorker(settings, Mock(), Mock(), Mock(), Mock())
+            cancel_event = threading.Event()
+            worktree = Path(temp_dir) / "worktree"
+            worktree.mkdir()
+            command_state = {"interrupted_by_message": False}
+            worker.api_client = Mock()
+            worker.api_client.list_commands.return_value = [
+                {"id": "cmd-1", "type": "message", "payload": {"message": "Use the attached master."}}
+            ]
+
+            worker._watch_commands("job-1", cancel_event, worktree, command_state)
+
+        self.assertTrue(cancel_event.is_set())
+        self.assertTrue(command_state["interrupted_by_message"])
         worker.api_client.acknowledge_command.assert_called_once()
 
     def test_training_watchdog_tracks_active_local_command(self) -> None:

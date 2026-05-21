@@ -815,7 +815,21 @@ class CodexRunner:
                 break
             time.sleep(1)
         if timed_out:
-            process.wait(timeout=5)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._append_raw_log_line(
+                    live_log_path,
+                    f"{LOG_PREFIX} Process did not exit after taskkill; forcing direct process kill.",
+                )
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except Exception as exc:  # noqa: BLE001
+                    self._append_raw_log_line(
+                        live_log_path,
+                        f"{LOG_PREFIX} Direct process kill failed or timed out: {exc}",
+                    )
             if timeout_reason == "cancelled":
                 timeout_message = f"{LOG_PREFIX} Command was stopped by an online command."
                 monitor_message = "Local command was stopped by an online command."

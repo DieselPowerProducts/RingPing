@@ -274,25 +274,13 @@ class InvoiceTrainingWorker(threading.Thread):
         if not job_id:
             return
 
-        cancel_event = threading.Event()
-        watchdog_state: dict[str, Any] = {
-            "last_event_at": time.monotonic(),
-            "active_command_started_at": None,
-            "active_command_text": "",
-            "last_silent_warning_at": 0.0,
-        }
-        command_thread = threading.Thread(
-            target=self._watch_commands,
-            args=(job_id, cancel_event),
-            daemon=True,
-            name=f"ringping-training-commands-{self._safe_id(job_id)}",
-        )
-        command_thread.start()
-
         project = self.storage.get_project(self.settings.training_worker_project_slug)
         request = self._request_record_for_job(job, project)
         live_log_path = self._prepare_live_log(job_id, job, project)
         worktree_path = None
+        command_state: dict[str, Any] = {
+            "interrupted_by_message": False,
+        }
         try:
             self.api_client.post_event(
                 job_id,
@@ -308,6 +296,20 @@ class InvoiceTrainingWorker(threading.Thread):
                 return
             self._post_ringcentral_status(f"Queued InvoiceExtractor training job {job_id} has started on {DISPLAY_NAME}.")
             branch_name, worktree_path = self.git_manager.create_or_reuse_worktree(project, request)
+            cancel_event = threading.Event()
+            watchdog_state: dict[str, Any] = {
+                "last_event_at": time.monotonic(),
+                "active_command_started_at": None,
+                "active_command_text": "",
+                "last_silent_warning_at": 0.0,
+            }
+            command_thread = threading.Thread(
+                target=self._watch_commands,
+                args=(job_id, cancel_event, worktree_path, command_state, self._job_command_ids(job)),
+                daemon=True,
+                name=f"ringping-training-commands-{self._safe_id(job_id)}",
+            )
+            command_thread.start()
             self.api_client.post_event(
                 job_id,
                 "workspace",
@@ -394,6 +396,22 @@ class InvoiceTrainingWorker(threading.Thread):
                 return
             if result.timeout_reason == "cancelled":
                 diff_summary = self.git_manager.collect_diff_summary(worktree_path)
+                if command_state.get("interrupted_by_message"):
+                    self.api_client.post_event(
+                        job_id,
+                        "message",
+                        (
+                            f"{DISPLAY_NAME} interrupted Codex for the new accounting correction. "
+                            "The job is back in the queue and will restart with that correction included."
+                        ),
+                        status="needs_fix",
+                        progress=35,
+                        diffSummary=diff_summary,
+                    )
+                    self._post_ringcentral_status(
+                        f"InvoiceExtractor training job {job_id} was interrupted for an accounting correction and will restart."
+                    )
+                    return
                 self.api_client.post_event(
                     job_id,
                     "stopped",
@@ -588,8 +606,15 @@ class InvoiceTrainingWorker(threading.Thread):
                 self.api_client.acknowledge_command(job_id, approval_command)
             self._post_ringcentral_status(f"InvoiceExtractor training job {job_id} approval failed: {exc}")
 
-    def _watch_commands(self, job_id: str, cancel_event: threading.Event) -> None:
-        seen_command_ids: set[str] = set()
+    def _watch_commands(
+        self,
+        job_id: str,
+        cancel_event: threading.Event,
+        worktree_path: Path,
+        command_state: dict[str, Any],
+        initial_seen_command_ids: set[str] | None = None,
+    ) -> None:
+        seen_command_ids: set[str] = set(initial_seen_command_ids or set())
         while not self._stop_event.is_set() and not cancel_event.is_set():
             try:
                 commands = self.api_client.list_commands(job_id)
@@ -609,14 +634,41 @@ class InvoiceTrainingWorker(threading.Thread):
                 if command_type == "message":
                     payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
                     text = str(payload.get("text") or payload.get("message") or "").strip()
+                    reference_files = self._command_files(command)
+                    downloaded_count = 0
+                    if reference_files:
+                        try:
+                            downloaded_count = len(
+                                self._download_command_files(job_id, command, reference_files, worktree_path)
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            self.api_client.post_event(
+                                job_id,
+                                "warning",
+                                f"{DISPLAY_NAME} could not download correction reference file(s): {exc}",
+                                status="running",
+                            )
                     if text:
                         self.api_client.post_event(
                             job_id,
                             "message",
-                            f"{DISPLAY_NAME} received this online message while Codex was running: {text}",
+                            (
+                                f"{DISPLAY_NAME} received this online message while Codex was running and will restart "
+                                f"with it: {text}"
+                            ),
+                            status="running",
+                        )
+                    if downloaded_count:
+                        self.api_client.post_event(
+                            job_id,
+                            "status",
+                            f"Downloaded {downloaded_count} correction reference file(s).",
                             status="running",
                         )
                     self.api_client.acknowledge_command(job_id, command)
+                    command_state["interrupted_by_message"] = True
+                    cancel_event.set()
+                    return
             self._stop_event.wait(max(self.settings.training_worker_active_command_poll_seconds, 1))
 
     def _update_training_watchdog_state(self, state: dict[str, Any], event: dict) -> None:
@@ -700,6 +752,40 @@ class InvoiceTrainingWorker(threading.Thread):
                 destination = vendor_dir / filename
                 self.api_client.download_file(file_id, destination)
                 downloaded.append((file_payload, destination))
+        for command in self._job_message_commands(job):
+            downloaded.extend(
+                self._download_command_files(job_id, command, self._command_files(command), worktree_path)
+            )
+        return downloaded
+
+    def _download_command_files(
+        self,
+        job_id: str,
+        command: dict,
+        files: list[dict],
+        worktree_path: Path,
+    ) -> list[tuple[dict, Path]]:
+        downloaded: list[tuple[dict, Path]] = []
+        if not files:
+            return downloaded
+        command_id = str(command.get("id") or command.get("commandId") or f"command-{int(time.time())}")
+        target_dir = (
+            worktree_path
+            / "ringping_attachments"
+            / f"training-{self._safe_id(job_id)}"
+            / "corrections"
+            / self._safe_id(command_id)
+        )
+        for file_payload in files:
+            file_id = str(file_payload.get("id") or file_payload.get("driveFileId") or "").strip()
+            if not file_id:
+                continue
+            filename = self._safe_filename(
+                str(file_payload.get("name") or file_payload.get("filename") or f"{file_id}.bin")
+            )
+            destination = target_dir / filename
+            self.api_client.download_file(file_id, destination)
+            downloaded.append((file_payload, destination))
         return downloaded
 
     def _write_training_manifest(self, job_id: str, downloaded_files: list[tuple[dict, Path]], worktree_path: Path) -> Path | None:
@@ -830,6 +916,21 @@ class InvoiceTrainingWorker(threading.Thread):
                     lines.append("- " + json.dumps(item, sort_keys=True))
                 else:
                     lines.append(f"- {item}")
+        message_commands = self._job_message_commands(job)
+        if message_commands:
+            lines.extend(["", "Accounting messages and corrections:"])
+            for command in message_commands:
+                payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
+                message = str(payload.get("text") or payload.get("message") or "").strip()
+                created_at = str(command.get("createdAt") or command.get("created_at") or "").strip()
+                prefix = f"- {created_at}: " if created_at else "- "
+                if message:
+                    lines.append(prefix + message)
+                command_files = self._command_files(command)
+                if command_files:
+                    lines.append(f"  Reference files attached to this correction: {len(command_files)}")
+                    for item in command_files:
+                        lines.append("  - " + json.dumps(item, sort_keys=True))
         if downloaded_files:
             lines.extend(["", "Downloaded local training files:"])
             for file_payload, path in downloaded_files:
@@ -898,6 +999,40 @@ class InvoiceTrainingWorker(threading.Thread):
 
     def _vendor_files(self, vendor: dict) -> list[dict]:
         files = vendor.get("files") or vendor.get("attachments") or vendor.get("documents") or []
+        return [file for file in files if isinstance(file, dict)] if isinstance(files, list) else []
+
+    def _job_message_commands(self, job: dict) -> list[dict]:
+        commands = job.get("commands")
+        if not isinstance(commands, list):
+            return []
+        return [
+            command
+            for command in commands
+            if isinstance(command, dict)
+            and str(command.get("type") or command.get("command") or "").strip().lower() == "message"
+        ]
+
+    def _job_command_ids(self, job: dict) -> set[str]:
+        commands = job.get("commands")
+        if not isinstance(commands, list):
+            return set()
+        ids: set[str] = set()
+        for command in commands:
+            if isinstance(command, dict):
+                command_id = str(command.get("id") or command.get("commandId") or "").strip()
+                if command_id:
+                    ids.add(command_id)
+        return ids
+
+    def _command_files(self, command: dict) -> list[dict]:
+        payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
+        files = (
+            payload.get("referenceFiles")
+            or payload.get("files")
+            or payload.get("attachments")
+            or payload.get("documents")
+            or []
+        )
         return [file for file in files if isinstance(file, dict)] if isinstance(files, list) else []
 
     def _find_training_output(self, worktree_path: Path) -> Path | None:
